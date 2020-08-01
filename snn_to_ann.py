@@ -257,7 +257,12 @@ if __name__ == '__main__':
                 print('No pretrained SNN found/loaded')
                 sys.exit()
     
-    log_file = './logs/snn_to_ann/'
+    log_file = './logs/'
+    try:
+        os.mkdir(log_file)
+    except OSError:
+        pass
+    log_file += 'snn_to_ann/'
     try:
         os.mkdir(log_file)
     except OSError:
