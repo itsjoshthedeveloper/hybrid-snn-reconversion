@@ -94,7 +94,7 @@ def test(loader, model, identifier):
         filename = './trained_models/snn_to_ann/'+identifier+'.pth'
         torch.save(state, filename)
         
-        f.write('\n test_loss: {:.4f}, test_acc: {:.4f}, time: {}'.  format(
+        f.write('\n ' + identifier + '\n\ttest_loss: {:.4f}, test_acc: {:.4f}, time: {}'.  format(
             state['test_loss'], 
             state['test_acc'],
             state['time']
@@ -318,11 +318,11 @@ if __name__ == '__main__':
     #     start_time = datetime.datetime.now()
     #     test(epoch)
 
-    # start_time = datetime.datetime.now()
-    # ann_accuracy = test(test_loader, model, ann_identifier)
+    start_time = datetime.datetime.now()
+    ann_accuracy = test(test_loader, model, ann_identifier)
 
-    # start_time = datetime.datetime.now()
-    # ann_prime_accuracy = test(test_loader, model_prime, ann_prime_identifier)
+    start_time = datetime.datetime.now()
+    ann_prime_accuracy = test(test_loader, model_prime, ann_prime_identifier)
 
     # f.write('\n ANN accuracy: {:.4f}'.format(ann_accuracy))
     # f.write('\n ANN\' accuracy: {:.4f}'.format(ann_prime_accuracy))
