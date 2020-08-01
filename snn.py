@@ -10,7 +10,7 @@ import torch.optim as optim
 from torchvision import datasets, transforms, models
 from torch.utils.data.dataloader import DataLoader
 from torch.autograd import Variable
-from torchviz import make_dot
+# from torchviz import make_dot
 from matplotlib import pyplot as plt
 from matplotlib.gridspec import GridSpec
 import numpy as np
@@ -114,12 +114,12 @@ def train(epoch):
     #total_loss = 0.0
     #total_correct = 0
     model.train()
-       
+
     #current_time = start_time
     #model.module.network_init(update_interval)
 
     for batch_idx, (data, target) in enumerate(train_loader):
-               
+
         if torch.cuda.is_available() and args.gpu:
             data, target = data.cuda(), target.cuda()
         
@@ -156,7 +156,7 @@ def train(epoch):
                         top1.avg,
                         )
                     )
-      
+
 def test(epoch):
 
     losses = AverageMeter('Loss')
@@ -199,7 +199,7 @@ def test(epoch):
 
         if top1.avg>max_accuracy:
             max_accuracy = top1.avg
-             
+
             state = {
                     'accuracy'              : max_accuracy,
                     'epoch'                 : epoch,
@@ -272,7 +272,7 @@ if __name__ == '__main__':
     torch.cuda.manual_seed_all(args.seed)
     #torch.backends.cudnn.deterministic = True
     #torch.backends.cudnn.benchmark = False
-           
+
     dataset             = args.dataset
     batch_size          = args.batch_size
     architecture        = args.architecture
@@ -340,7 +340,7 @@ if __name__ == '__main__':
     if torch.cuda.is_available() and args.gpu:
         torch.set_default_tensor_type('torch.cuda.FloatTensor')
 
-    normalize       = transforms.Normalize(mean = [0.5, 0.5, 0.5], std = [0.5, 0.5, 0.5])
+    normalize = transforms.Normalize(mean = [0.5, 0.5, 0.5], std = [0.5, 0.5, 0.5])
     
     if dataset in ['CIFAR10', 'CIFAR100']:
         transform_train = transforms.Compose([
@@ -404,7 +404,7 @@ if __name__ == '__main__':
     model = nn.DataParallel(model) 
     
     if pretrained_ann:
-      
+
         state = torch.load(pretrained_ann, map_location='cpu')
         cur_dict = model.state_dict()     
         for key in state['state_dict'].keys():

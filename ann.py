@@ -7,7 +7,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torchvision import datasets, transforms, models
-from torchviz import make_dot
+# from torchviz import make_dot
 from matplotlib import pyplot as plt
 import pdb
 import sys
@@ -304,5 +304,5 @@ if __name__ == '__main__':
         start_time = datetime.datetime.now()
         train(epoch, train_loader)
         test(test_loader)
-           
+
     f.write('\n Highest accuracy: {:.4f}'.format(max_accuracy))

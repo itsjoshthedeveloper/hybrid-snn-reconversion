@@ -106,15 +106,15 @@ class VGG(nn.Module):
                 layers += [nn.AvgPool2d(kernel_size=2, stride=2)]
             else:
                 layers += [nn.Conv2d(in_channels, x, kernel_size=self.kernel_size, padding=(self.kernel_size-1)//2, stride=stride, bias=False),
-                           nn.ReLU(inplace=True)
-                           ]
+                            nn.ReLU(inplace=True)
+                            ]
                 layers += [nn.Dropout(self.dropout)]           
                 in_channels = x
 
         
         return nn.Sequential(*layers)
 
-def test():
+def testVGG():
     for a in cfg.keys():
         if a=='VGG5':
             continue
@@ -128,4 +128,4 @@ def test():
     # y = net(x)
     # print(y.size())
 if __name__ == '__main__':
-    test()
+    testVGG()

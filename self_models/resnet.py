@@ -2,11 +2,11 @@
 #   @author: Nitin Rathi    #
 #############################
 
+import pdb
+import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import pdb
-import math
 
 class BasicBlock(nn.Module):
     expansion = 1
@@ -107,12 +107,12 @@ def ResNet20(labels=10, dropout=0.2):
 def ResNet34(labels=10, dropout=0.2):
     return ResNet(block=BasicBlock, num_blocks=[3,4,5,3], labels=labels, dropout=dropout)
 
-def test():
-    print('In test()')
+def testResnet():
+    print('In testResnet()')
     net = ResNet12()
-    print('Calling y=net() from test()')
+    print('Calling y=net() from testResnet()')
     y = net(torch.randn(1,3,32,32))
     print(y.size())
 
 if __name__ == '__main__':
-    test()
+    testResnet()
