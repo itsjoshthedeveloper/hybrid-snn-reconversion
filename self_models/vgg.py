@@ -28,13 +28,13 @@ class VGG(nn.Module):
         self.features       = self._make_layers(cfg[vgg_name])
         if vgg_name == 'VGG5' and dataset!= 'MNIST':
             self.classifier = nn.Sequential(
-                            nn.Linear(512*4*4, 4096, bias=False),
+                            nn.Linear(512*4*4, 1024, bias=False),
                             nn.ReLU(inplace=True),
                             nn.Dropout(0.5),
-                            nn.Linear(4096, 4096, bias=False),
+                            nn.Linear(1024, 1024, bias=False),
                             nn.ReLU(inplace=True),
                             nn.Dropout(0.5),
-                            nn.Linear(4096, labels, bias=False)
+                            nn.Linear(1024, labels, bias=False)
                             )
         elif vgg_name!='VGG5' and dataset!='MNIST':
             self.classifier = nn.Sequential(
