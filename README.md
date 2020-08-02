@@ -10,8 +10,8 @@ The training is performed in the following three steps:
 
 - Train an ANN ('ann.py')
 - Convert the ANN to SNN and perform spike-based backpropagation ('snn.py')
-- _Reconvert the SNN into ANN'_
-- _Use FGSM to attack both ANN and ANN' to measure robustness_
+- _Reconvert the SNN into ANN' ('snn_to_ann.py')_
+- _Use FGSM to attack both ANN and ANN' to measure robustness ('snn_to_ann.py')_
 
 # Files
 
