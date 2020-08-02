@@ -53,7 +53,9 @@ def fgsm_attack(image, epsilon, data_grad):
     # Return the perturbed image
     return perturbed_image
 
-def testFGSM( test_loader, model, device, epsilon ):
+def testFGSM( test_loader, model, device, epsilon, identifier ):
+
+    f.write('\n\n' + identifier)
 
     # Accuracy counter
     correct = 0
@@ -65,6 +67,8 @@ def testFGSM( test_loader, model, device, epsilon ):
 
         # # Send the data and label to the device
         # data, target = data.to(device), target.to(device)
+        if torch.cuda.is_available() and args.gpu:
+            data, target = data.cuda(), target.cuda()
 
         # Set requires_grad attribute of tensor. Important for Attack
         data.requires_grad = True
@@ -111,7 +115,7 @@ def testFGSM( test_loader, model, device, epsilon ):
 
     # Calculate final accuracy for this epsilon
     final_acc = correct/float(len(test_loader))
-    f.write("Epsilon: {}\tTest Accuracy = {} / {} = {}".format(epsilon, correct, len(test_loader), final_acc))
+    f.write("\n\tEpsilon: {}\tTest Accuracy = {} / {} = {}".format(epsilon, correct, len(test_loader), final_acc))
 
     # Return the accuracy and an adversarial example
     return final_acc, adv_examples
@@ -128,8 +132,8 @@ def test(loader, model, identifier):
         
         for batch_idx, (data, target) in enumerate(loader):
 
-            # if torch.cuda.is_available() and args.gpu:
-            #     data, target = data.cuda(), target.cuda()
+            if torch.cuda.is_available() and args.gpu:
+                data, target = data.cuda(), target.cuda()
             
             output = model(data)
             loss = F.cross_entropy(output,target)
@@ -184,12 +188,12 @@ def test(loader, model, identifier):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Reconvert SNN to ANN', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument('--gpu',                    default=True,               type=bool,      help='use gpu')
+    parser.add_argument('--gpu',                    default=False,              type=bool,      help='use gpu')
     parser.add_argument('--log',                    action='store_true',                        help='to print the output on terminal or to log file')
     parser.add_argument('-s','--seed',              default=0,                  type=int,       help='seed for random number')
     parser.add_argument('--dataset',                default='CIFAR10',          type=str,       help='dataset name', choices=['MNIST','CIFAR10','CIFAR100'])
     parser.add_argument('--batch_size',             default=64,                 type=int,       help='minibatch size')
-    parser.add_argument('-a','--architecture',      default='VGG5',            type=str,       help='network architecture', choices=['VGG5','VGG9','VGG11','VGG13','VGG16','VGG19','RESNET12','RESNET20','RESNET34'])
+    parser.add_argument('-a','--architecture',      default='VGG5',             type=str,       help='network architecture', choices=['VGG5','VGG9','VGG11','VGG13','VGG16','VGG19','RESNET12','RESNET20','RESNET34'])
     # parser.add_argument('-lr','--learning_rate',    default=1e-2,               type=float,     help='initial learning_rate')
     parser.add_argument('--pretrained_ann',         default='',                 type=str,       help='pretrained model to initialize ANN')
     parser.add_argument('--pretrained_snn',         default='',                 type=str,       help='pretrained SNN for reconversion to model_prime')
@@ -207,13 +211,13 @@ if __name__ == '__main__':
     
     args=parser.parse_args()
 
-    # os.environ['CUDA_VISIBLE_DEVICES'] = args.devices
+    os.environ['CUDA_VISIBLE_DEVICES'] = args.devices
     
     # Seed random number
     torch.manual_seed(args.seed)
     np.random.seed(args.seed)
-    # torch.cuda.manual_seed(args.seed)
-    # torch.cuda.manual_seed_all(args.seed)
+    torch.cuda.manual_seed(args.seed)
+    torch.cuda.manual_seed_all(args.seed)
     #torch.backends.cudnn.deterministic = True
     #torch.backends.cudnn.benchmark = False
     
@@ -289,8 +293,8 @@ if __name__ == '__main__':
     f.write('\n\n')
         
     # Training settings
-    # if torch.cuda.is_available() and args.gpu:
-    #     torch.set_default_tensor_type('torch.cuda.FloatTensor')
+    if torch.cuda.is_available() and args.gpu:
+        torch.set_default_tensor_type('torch.cuda.FloatTensor')
     
     # Loading Dataset
     if dataset == 'CIFAR100':
@@ -378,9 +382,9 @@ if __name__ == '__main__':
     
     f.write('\n {}'.format(model_prime) + '\n')
     
-    # if torch.cuda.is_available() and args.gpu:
-    #     model.cuda()
-    #     model_prime.cuda()
+    if torch.cuda.is_available() and args.gpu:
+        model.cuda()
+        model_prime.cuda()
     
     # if optimizer == 'SGD':
     #     optimizer = optim.SGD(model.parameters(), lr=learning_rate, momentum=momentum, weight_decay=weight_decay)
@@ -398,7 +402,6 @@ if __name__ == '__main__':
     ann_prime_state = test(test_loader, model_prime, ann_prime_identifier)
 
     epsilons = [0, .05, .1, .15, .2, .25, .3]
-    f.write('\n epsilons: {}'.format(epsilons))
     device = torch.device("cuda" if (args.gpu and torch.cuda.is_available()) else "cpu")
     ann_accuracies_fgsm = []
     ann_examples_fgsm = []
@@ -407,11 +410,12 @@ if __name__ == '__main__':
 
     # Run test for each epsilon
     for eps in epsilons:
-        acc, ex = testFGSM(test_loader_fgsm, model, device, eps)
+        acc, ex = testFGSM(test_loader_fgsm, model, device, eps, ann_identifier)
         ann_accuracies_fgsm.append(acc)
         ann_examples_fgsm.append(ex)
 
-        acc, ex = testFGSM(test_loader_fgsm, model_prime, device, eps)
+    for eps in epsilons:
+        acc, ex = testFGSM(test_loader_fgsm, model_prime, device, eps, ann_prime_identifier)
         ann_prime_accuracies_fgsm.append(acc)
         ann_prime_examples_fgsm.append(ex)
 
@@ -422,7 +426,8 @@ if __name__ == '__main__':
             ann_state['time']
             )
         )
-    f.write('\n\tfgsm accuracies: ' + ann_accuracies_fgsm)
+    f.write('\n\tepsilons: {}'.format(epsilons))
+    f.write('\n\tfgsm accuracies: {}'.format(ann_accuracies_fgsm))
 
     f.write('\n\n ' + ann_prime_identifier)
     f.write('\n\ttest_loss: {:.4f}, test_acc: {:.4f}, time: {}'.format(
@@ -431,7 +436,8 @@ if __name__ == '__main__':
             ann_prime_state['time']
             )
         )
-    f.write('\n\tfgsm accuracies: ' + ann_prime_accuracies_fgsm)
+    f.write('\n\tepsilons: {}'.format(epsilons))
+    f.write('\n\tfgsm accuracies: {}'.format(ann_prime_accuracies_fgsm))
     
     plt.figure(figsize=(5,5))
     plt.plot(epsilons, ann_accuracies_fgsm, label='ANN')
