@@ -168,13 +168,13 @@ class VGG_SNN_STDB(nn.Module):
         
         layers = []
         if self.vgg_name == 'VGG5' and self.dataset != 'MNIST':
-            layers += [nn.Linear(512*4*4, 4096, bias=False)]
+            layers += [nn.Linear(512*4*4, 1024, bias=False)]
             layers += [nn.ReLU(inplace=True)]
             layers += [nn.Dropout(0.5)]
-            layers += [nn.Linear(4096, 4096, bias=False)]
+            layers += [nn.Linear(1024, 1024, bias=False)]
             layers += [nn.ReLU(inplace=True)]
             layers += [nn.Dropout(0.5)]
-            layers += [nn.Linear(4096, self.labels, bias=False)]
+            layers += [nn.Linear(1024, self.labels, bias=False)]
         
         elif self.vgg_name != 'VGG5' and self.dataset != 'MNIST':
             layers += [nn.Linear(512*2*2, 4096, bias=False)]
