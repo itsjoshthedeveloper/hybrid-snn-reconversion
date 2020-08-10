@@ -487,8 +487,4 @@ if __name__ == '__main__':
         test(epoch)
 
     f.write('\n Highest accuracy: {:.4f}'.format(max_accuracy))
-    f.write('\n Total script time: {}'.format(datetime.datetime.now() - now))
-
-
-
-
+    f.write('\n Total script time: {}'.format(datetime.timedelta(seconds=(datetime.datetime.now() - now).seconds)))

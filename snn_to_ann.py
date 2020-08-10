@@ -49,13 +49,11 @@ def fgsm_attack(image, epsilon, data_grad):
     # Create the perturbed image by adjusting each pixel of the input image
     perturbed_image = image + epsilon*sign_data_grad
     # Adding clipping to maintain [0,1] range
-    perturbed_image = torch.clamp(perturbed_image, 0, 1)
+    # perturbed_image = torch.clamp(perturbed_image, 0, 1)
     # Return the perturbed image
     return perturbed_image
 
-def testFGSM( test_loader, model, device, epsilon, identifier ):
-
-    f.write('\n\n' + identifier)
+def testFGSM( test_loader, model, device, epsilon ):
 
     # Accuracy counter
     correct = 0
@@ -169,7 +167,7 @@ def test(loader, model, identifier):
             os.mkdir('./trained_models/snn_to_ann/')
         except OSError:
             pass
-        filename = './trained_models/snn_to_ann/'+identifier+'.pth'
+        filename = './trained_models/snn_to_ann/'+date_time+'_'+identifier+'.pth'
         torch.save(state, filename)
         
         # f.write(' test_loss: {:.4f}, test_acc: {:.4f}, best: {:.4f}, time: {}'.  format(
@@ -271,11 +269,15 @@ if __name__ == '__main__':
         os.mkdir(log_file)
     except OSError:
         pass
+
+    # get current time
+    now = datetime.datetime.now() # current date and time
+    date_time = now.strftime('%m-%d-%Y_%H-%M-%S')
     
     #identifier = 'ann_'+architecture.lower()+'_'+dataset.lower()+'_'+str(datetime.datetime.now())
     ann_identifier = 'ann_'+architecture.lower()+'_'+dataset.lower()
     ann_prime_identifier = 'ann_'+architecture.lower()+'_'+dataset.lower()+'_prime'
-    log_file += ann_identifier+'.log'
+    log_file += date_time+'_'+ann_identifier+'.log'
     
     if args.log:
         f = open(log_file, 'w', buffering=1)
@@ -409,17 +411,19 @@ if __name__ == '__main__':
     ann_prime_examples_fgsm = []
 
     # Run test for each epsilon
+    f.write('\n\n' + ann_identifier)
     for eps in epsilons:
-        acc, ex = testFGSM(test_loader_fgsm, model, device, eps, ann_identifier)
+        acc, ex = testFGSM(test_loader_fgsm, model, device, eps)
         ann_accuracies_fgsm.append(acc)
         ann_examples_fgsm.append(ex)
 
+    f.write('\n\n' + ann_prime_identifier)
     for eps in epsilons:
-        acc, ex = testFGSM(test_loader_fgsm, model_prime, device, eps, ann_prime_identifier)
+        acc, ex = testFGSM(test_loader_fgsm, model_prime, device, eps)
         ann_prime_accuracies_fgsm.append(acc)
         ann_prime_examples_fgsm.append(ex)
 
-    f.write('\n\n ' + ann_identifier)
+    f.write('\n\n ' + ann_identifier + ' summary')
     f.write('\n\ttest_loss: {:.4f}, test_acc: {:.4f}, time: {}'.format(
             ann_state['test_loss'], 
             ann_state['test_acc'],
@@ -429,7 +433,7 @@ if __name__ == '__main__':
     f.write('\n\tepsilons: {}'.format(epsilons))
     f.write('\n\tfgsm accuracies: {}'.format(ann_accuracies_fgsm))
 
-    f.write('\n\n ' + ann_prime_identifier)
+    f.write('\n\n ' + ann_prime_identifier + ' summary')
     f.write('\n\ttest_loss: {:.4f}, test_acc: {:.4f}, time: {}'.format(
             ann_prime_state['test_loss'], 
             ann_prime_state['test_acc'],
@@ -444,12 +448,13 @@ if __name__ == '__main__':
     plt.plot(epsilons, ann_prime_accuracies_fgsm, label='ANN\'')
     plt.yticks(np.arange(0, 1.1, step=0.1))
     plt.xticks(np.arange(0, .35, step=0.05))
-    plt.title("Accuracy vs Epsilon [{}]".format(ann_identifier))
+    plt.title("Accuracy vs Epsilon [{}]".format(log_file[:-4]))
     plt.xlabel("Epsilon")
     plt.ylabel("Accuracy")
     plt.legend()
-    plt.savefig('./logs/snn_to_ann/'+ann_identifier+'.png', bbox_inches='tight')
+    plt.savefig('./logs/snn_to_ann/'+log_file[:-4]+'.png', bbox_inches='tight')
 
     # f.write('\n ANN accuracy: {:.4f}'.format(ann_accuracy))
     # f.write('\n ANN\' accuracy: {:.4f}'.format(ann_prime_accuracy))
+    f.write('\n\n Total script time: {}'.format(datetime.timedelta(seconds=(datetime.datetime.now() - now).seconds)))
     f.close()
