@@ -309,7 +309,12 @@ if __name__ == '__main__':
         pass 
 
     #identifier = 'snn_'+architecture.lower()+'_'+dataset.lower()+'_'+str(timesteps)+'_'+str(datetime.datetime.now())
-    identifier = 'snn_'+architecture.lower()+'_'+dataset.lower()+'_'+str(timesteps)
+
+    # get current time
+    now = datetime.datetime.now() # current date and time
+    date_time = now.strftime('%m-%d-%Y_%H-%M-%S')
+
+    identifier = date_time+'_snn_'+architecture.lower()+'_'+dataset.lower()+'_'+str(timesteps)
     log_file+=identifier+'.log'
     
     if args.log:
@@ -324,7 +329,7 @@ if __name__ == '__main__':
             if val.lower()=='y' or val.lower()=='yes':
                 pretrained_ann = ann_file
 
-    f.write('\n Run on time: {}'.format(datetime.datetime.now()))
+    f.write('\n Run on time: {}'.format(now))
 
     f.write('\n\n Arguments: ')
     for arg in vars(args):
@@ -482,6 +487,7 @@ if __name__ == '__main__':
         test(epoch)
 
     f.write('\n Highest accuracy: {:.4f}'.format(max_accuracy))
+    f.write('\n Total script time: {}'.format(datetime.datetime.now() - now))
 
 
 
