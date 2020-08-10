@@ -333,6 +333,7 @@ if __name__ == '__main__':
     
     if architecture[0:3].lower() == 'vgg':
         model = VGG(vgg_name=architecture, labels=labels, dataset=dataset, kernel_size=kernel_size, dropout=dropout)
+        model_prime = VGG(vgg_name=architecture, labels=labels, dataset=dataset, kernel_size=kernel_size, dropout=dropout)
     elif architecture[0:3].lower() == 'res':
         if architecture.lower() == 'resnet12':
             model = ResNet12(labels=labels, dropout=dropout)
@@ -341,7 +342,6 @@ if __name__ == '__main__':
         elif architecture.lower() == 'resnet34':
             model = ResNet34(labels=labels, dropout=dropout) 
     #f.write('\n{}'.format(model))
-    model_prime = model
     
     #CIFAR100 sometimes has problem to start training
     #One solution is to train for CIFAR10 with same architecture
