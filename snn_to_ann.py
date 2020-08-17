@@ -448,11 +448,11 @@ if __name__ == '__main__':
     plt.plot(epsilons, ann_prime_accuracies_fgsm, label='ANN\'')
     plt.yticks(np.arange(0, 1.1, step=0.1))
     plt.xticks(np.arange(0, .35, step=0.05))
-    plt.title("Accuracy vs Epsilon [{}]".format(log_file[:-4]))
+    plt.title("Accuracy vs Epsilon [{}]".format(log_file[18:-4]))
     plt.xlabel("Epsilon")
     plt.ylabel("Accuracy")
     plt.legend()
-    plt.savefig('./logs/snn_to_ann/'+log_file[:-4]+'.png', bbox_inches='tight')
+    plt.savefig('./logs/snn_to_ann/'+log_file[18:-4]+'.png', bbox_inches='tight')
 
     # f.write('\n ANN accuracy: {:.4f}'.format(ann_accuracy))
     # f.write('\n ANN\' accuracy: {:.4f}'.format(ann_prime_accuracy))
