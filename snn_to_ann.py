@@ -191,7 +191,7 @@ if __name__ == '__main__':
     parser.add_argument('-s','--seed',              default=0,                  type=int,       help='seed for random number')
     parser.add_argument('--dataset',                default='CIFAR10',          type=str,       help='dataset name', choices=['MNIST','CIFAR10','CIFAR100'])
     parser.add_argument('--batch_size',             default=64,                 type=int,       help='minibatch size')
-    parser.add_argument('-a','--architecture',      default='VGG5',             type=str,       help='network architecture', choices=['VGG5','VGG9','VGG11','VGG13','VGG16','VGG19','RESNET12','RESNET20','RESNET34'])
+    parser.add_argument('-a','--architecture',      default='VGG16',             type=str,       help='network architecture', choices=['VGG5','VGG9','VGG11','VGG13','VGG16','VGG19','RESNET12','RESNET20','RESNET34'])
     # parser.add_argument('-lr','--learning_rate',    default=1e-2,               type=float,     help='initial learning_rate')
     parser.add_argument('--pretrained_ann',         default='',                 type=str,       help='pretrained model to initialize ANN')
     parser.add_argument('--pretrained_snn',         default='',                 type=str,       help='pretrained SNN for reconversion to model_prime')
@@ -291,7 +291,12 @@ if __name__ == '__main__':
         # if arg == 'lr_interval':
         #     f.write('\n\t {:20} : {}'.format(arg, lr_interval))
         # else:
-        f.write('\n\t {:20} : {}'.format(arg, getattr(args,arg)))
+        if arg == 'pretrained_ann':
+            f.write('\n\t {:20} : {}'.format(arg, pretrained_ann))
+        elif arg == 'pretrained_snn':
+            f.write('\n\t {:20} : {}'.format(arg, pretrained_snn))
+        else:
+            f.write('\n\t {:20} : {}'.format(arg, getattr(args,arg)))
     f.write('\n\n')
         
     # Training settings
@@ -352,13 +357,17 @@ if __name__ == '__main__':
     if pretrained_ann:
         state = torch.load(pretrained_ann, map_location='cpu')
         cur_dict = model.state_dict()
+        # print(cur_dict)
         for key in state['state_dict'].keys():
-            if key in cur_dict:
-                if (state['state_dict'][key].shape == cur_dict[key].shape):
-                    cur_dict[key] = nn.Parameter(state['state_dict'][key].data)
+            curKey = key
+            if 'module' not in curKey:
+                curKey = 'module.' + key
+            if curKey in cur_dict:
+                if (state['state_dict'][key].shape == cur_dict[curKey].shape):
+                    cur_dict[curKey] = nn.Parameter(state['state_dict'][key].data)
                     f.write('\n Success [ANN]: Loaded {} from {}'.format(key, pretrained_ann))
                 else:
-                    f.write('\n Error [ANN]: Size mismatch at {}, size of loaded model {}, size of current model {}'.format(key, state['state_dict'][key].shape, model.state_dict()[key].shape))
+                    f.write('\n Error [ANN]: Size mismatch at {}, size of loaded model {}, size of current model {}'.format(key, state['state_dict'][key].shape, cur_dict[curKey].shape))
             else:
                 f.write('\n Error [ANN]: Loaded weight {} not present in current model'.format(key))
         

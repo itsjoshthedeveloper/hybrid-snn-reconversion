@@ -413,12 +413,15 @@ if __name__ == '__main__':
         state = torch.load(pretrained_ann, map_location='cpu')
         cur_dict = model.state_dict()     
         for key in state['state_dict'].keys():
-            if key in cur_dict:
-                if (state['state_dict'][key].shape == cur_dict[key].shape):
-                    cur_dict[key] = nn.Parameter(state['state_dict'][key].data)
+            curKey = key
+            if 'module' not in curKey:
+                curKey = 'module.' + key
+            if curKey in cur_dict:
+                if (state['state_dict'][key].shape == cur_dict[curKey].shape):
+                    cur_dict[curKey] = nn.Parameter(state['state_dict'][key].data)
                     f.write('\n Success: Loaded {} from {}'.format(key, pretrained_ann))
                 else:
-                    f.write('\n Error: Size mismatch, size of loaded model {}, size of current model {}'.format(state['state_dict'][key].shape, model.state_dict()[key].shape))
+                    f.write('\n Error: Size mismatch at {}, size of loaded model {}, size of current model {}'.format(key, state['state_dict'][key].shape, cur_dict[curKey].shape))
             else:
                 f.write('\n Error: Loaded weight {} not present in current model'.format(key))
         model.load_state_dict(cur_dict)
