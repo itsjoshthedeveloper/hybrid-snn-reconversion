@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH -p pi_panda --gres=gpu:1 --mem=20G -t 40:00:00 --mail-user=josh.chough@yale.edu --mail-type=ALL
+#SBATCH -p pi_panda --gres=gpu:1 --mem=20G -t 5- --mail-user=josh.chough@yale.edu --mail-type=ALL
 
 module load miniconda
 source activate pytorch_env
