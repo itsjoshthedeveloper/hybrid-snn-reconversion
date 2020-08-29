@@ -25,7 +25,9 @@ class VGG(nn.Module):
         self.dataset        = dataset
         self.kernel_size    = kernel_size
         self.dropout        = dropout
-        self.features       = self._make_layers(cfg[vgg_name])
+        self.vgg_name       = vgg_name
+        self.cfg            = cfg[self.vgg_name]
+        self.features       = self._make_layers(self.cfg)
         if vgg_name == 'VGG5' and dataset!= 'MNIST':
             self.classifier = nn.Sequential(
                             nn.Linear(512*4*4, 1024, bias=False),
@@ -72,9 +74,15 @@ class VGG(nn.Module):
 
     def forward(self, x):
         out = self.features(x)
+
+        act_features = []
+        for layer in self.features:
+            x = layer(x)
+            act_features.append(x)
+
         out = out.view(out.size(0), -1)
         out = self.classifier(out)
-        return out
+        return out, act_features
 
     def _initialize_weights2(self):
         for m in self.modules():
