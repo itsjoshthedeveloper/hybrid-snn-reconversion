@@ -185,28 +185,31 @@ def testFGSM( test_loader, model, device, epsilon ):
         # Set requires_grad attribute of tensor. Important for Attack
         data.requires_grad = True
 
-        # Forward pass the data through the model
-        output = model(data)
-        init_pred = output.max(1, keepdim=True)[1] # get the index of the max log-probability
+        if epsilon == 0:
+            perturbed_data = data
+        else:
+            # Forward pass the data through the model
+            output, _ = model(data)
+            init_pred = output.max(1, keepdim=True)[1] # get the index of the max log-probability
 
-        # If the initial prediction is wrong, dont bother attacking, just move on
-        if init_pred.item() != target.item():
-            continue
+            # If the initial prediction is wrong, dont bother attacking, just move on
+            if init_pred.item() != target.item():
+                continue
 
-        # Calculate the loss
-        loss = F.nll_loss(output, target)
+            # Calculate the loss
+            loss = F.nll_loss(output, target)
 
-        # Zero all existing gradients
-        model.zero_grad()
+            # Zero all existing gradients
+            model.zero_grad()
 
-        # Calculate gradients of model in backward pass
-        loss.backward()
+            # Calculate gradients of model in backward pass
+            loss.backward()
 
-        # Collect datagrad
-        data_grad = data.grad.data
+            # Collect datagrad
+            data_grad = data.grad.data
 
-        # Call FGSM Attack
-        perturbed_data = fgsm_attack(data, epsilon, data_grad)
+            # Call FGSM Attack
+            perturbed_data = fgsm_attack(data, epsilon, data_grad)
 
         # Re-classify the perturbed image
         output, activations_adv = model(perturbed_data)
@@ -227,7 +230,7 @@ def testFGSM( test_loader, model, device, epsilon ):
 
     # Calculate final accuracy for this epsilon
     final_acc = correct/float(len(test_loader))
-    f.write("\n\tEpsilon: {}\tTest Accuracy = {} / {} = {}".format(epsilon, correct, len(test_loader), final_acc))
+    f.write("\n\tEpsilon: {}\tTest Accuracy = {} / {} = {}\tActivation layers: {}".format(epsilon, correct, len(test_loader), final_acc, len(activations_adv)))
 
     # Return the accuracy and an adversarial example
     return final_acc, activations_adv
@@ -303,36 +306,36 @@ def test(epoch):
             datetime.timedelta(seconds=(datetime.datetime.now() - start_time).seconds)
             )
         )
-    
-    def calculate_ans(adv_activations, epsilons):
-        num_layers = len(adv_activations[0])
-        ans_eps = []
-        for eps in range(1,len(epsilons)):
-            ans=[]
-            #print(eps)
-            for i in range(num_layers):
-                a_clean = adv_activations[0][i] # epsilon 0 is clean
-                a_adv = adv_activations[eps][i] # absolute val of a_adv
-                Ans = torch.sum((a_clean-a_adv)**2, 1).sqrt()
-                ans.append(torch.mean(Ans))
-                del Ans
-            ans_eps.append(ans)
-            del ans
-        return ans_eps
 
-    def plot_ans(ans_eps, epsilons):
-        num_layers = len(ans_eps[0])
-        ans_eps_data = [list(x) for x in zip(epsilons[1:], ans_eps)]
-        plt.figure(figsize=(10,10))
-        for e in range(0, len(ans_eps_data)):
-            plt.plot(range(1, num_layers+1), ans_eps_data[e][1], "*-", label='e = {}'.format(ans_eps_data[e][0]))
-        plt.yticks(np.arange(0, 3, step=1))
-        plt.xticks(np.arange(1, num_layers+1, step=1))
-        plt.title("Adversarial Noise Sensitivity Ratio by Layer")
-        plt.xlabel("Layers")
-        plt.ylabel("ANS")
-        plt.legend()
-        plt.show()
+def calculate_ans(adv_activations, epsilons):
+    num_layers = len(adv_activations[0])
+    ans_eps = []
+    for eps in range(1,len(epsilons)):
+        ans=[]
+        #print(eps)
+        for i in range(num_layers):
+            a_clean = adv_activations[0][i] # epsilon 0 is clean
+            a_adv = adv_activations[eps][i] # absolute val of a_adv
+            Ans = torch.sum((a_clean-a_adv)**2, 1).sqrt()
+            ans.append(torch.mean(Ans))
+            del Ans
+        ans_eps.append(ans)
+        del ans
+    return ans_eps
+
+def plot_ans(ans_eps, epsilons, ann_identifier):
+    num_layers = len(ans_eps[0])
+    ans_eps_data = [list(x) for x in zip(epsilons[1:], ans_eps)]
+    plt.figure(figsize=(10,10))
+    for e in range(0, len(ans_eps_data)):
+        plt.plot(range(1, num_layers+1), ans_eps_data[e][1], "*-", label='e = {}'.format(ans_eps_data[e][0]))
+    plt.yticks(np.arange(0, max(ans_eps[-1]).item(), step=1))
+    plt.xticks(np.arange(0, num_layers, step=1))
+    plt.title("Adversarial Noise Sensitivity Ratio by Layer")
+    plt.xlabel("Layers")
+    plt.ylabel("ANS")
+    plt.legend()
+    plt.savefig('./logs/snn_ans/'+ann_identifier+'.png', bbox_inches='tight')
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='SNN training')
@@ -365,6 +368,7 @@ if __name__ == '__main__':
     parser.add_argument('--test_acc_every_batch',   action='store_true',                        help='print acc of every batch during inference')
     parser.add_argument('--train_acc_batches',      default=200,                type=int,       help='print training progress after this many batches')
     parser.add_argument('--devices',                default='0',                type=str,       help='list of gpu device(s)')
+    parser.add_argument('--ans',                    default=False,              type=bool,       help='find adversarially sensitive layers')
 
     args = parser.parse_args()
 
@@ -401,13 +405,14 @@ if __name__ == '__main__':
     kernel_size         = args.kernel_size
     test_acc_every_batch= args.test_acc_every_batch
     train_acc_batches   = args.train_acc_batches
+    calcANS             = args.ans
 
     values = args.lr_interval.split()
     lr_interval = []
     for value in values:
         lr_interval.append(int(float(value)*args.epochs))
 
-    log_file = './logs/snn/'
+    log_file = './logs/snn_ans/'
     try:
         os.mkdir(log_file)
     except OSError:
@@ -419,9 +424,9 @@ if __name__ == '__main__':
     now = datetime.datetime.now() # current date and time
     date_time = now.strftime('%m-%d-%Y_%H-%M-%S')
 
-    ann_identifier = date_time+'_snn_'+architecture.lower()+'_'+dataset.lower()
+    ann_identifier = date_time+'_ann_'+architecture.lower()+'_'+dataset.lower()
     snn_identifier = date_time+'_snn_'+architecture.lower()+'_'+dataset.lower()+'_'+str(timesteps)
-    log_file+=snn_identifier+'.log'
+    log_file+=ann_identifier+'.log'
     
     if args.log:
         f = open(log_file, 'w', buffering=1)
@@ -451,6 +456,7 @@ if __name__ == '__main__':
             f.write('\n\t {:20} : {}'.format(arg, pretrained_ann))
         else:
             f.write('\n\t {:20} : {}'.format(arg, getattr(args,arg)))
+    f.write('\n')
     
     # Training settings
     if torch.cuda.is_available() and args.gpu:
@@ -459,7 +465,7 @@ if __name__ == '__main__':
     adv_sens_layers = []
     state = torch.load(pretrained_ann, map_location='cpu')
     #If adv_sens_layers present in loaded ANN file
-    if 'adv_sens_layers' in state.keys():
+    if 'adv_sens_layers' in state.keys() and calcANS == False:
         adv_sens_layers = state['adv_sens_layers']
         f.write('\n Info: adv_sens_layers loaded from trained ANN: {}'.format(adv_sens_layers))
     else:
@@ -469,7 +475,7 @@ if __name__ == '__main__':
 
         """ LOAD ANN """
         
-        f.write('\n*Loading ANN*')
+        f.write('\n*Loading ANN*\n')
 
         # Loading Dataset
         if dataset == 'CIFAR100':
@@ -560,7 +566,7 @@ if __name__ == '__main__':
         for eps in epsilons:
             adv_acc, adv_acts = testFGSM(test_loader_fgsm, model, device, eps)
             adv_activations.append(adv_acts) # activations of last batch
-        f.write('\n Adversarial activations:\n {}'.format(adv_activations))
+        f.write('\n Sets of activations: {}'.format(len(adv_activations)))
 
         f.write('\n*Finished attacking ANN*')
 
@@ -570,17 +576,53 @@ if __name__ == '__main__':
         f.write('\n*Getting ANS*')
 
         ans_eps = calculate_ans(adv_activations, epsilons)
-        f.write('\n ANS values:\n {}'.format(ans_eps))
-        plot_ans(ans_eps, epsilons)
-
-        threshold = 2
-        for i in range(len(ans_eps[-1])):
-            if ans_eps[-1][i] >= threshold:
-                adv_sens_layers.append(i)
-        f.write('\n Adversarially sensitive layers:\n {}'.format(adv_sens_layers))
+        ans_eps_items = []
+        for ans in ans_eps[0]:
+            ans_eps_items.append(ans.item())
+        f.write('\n ANS values:\n {}'.format(ans_eps_items))
+        plot_ans(ans_eps, epsilons, ann_identifier)
 
         f.write('\n*Finished getting ANS*')
-        
+
+
+        """ FILTER ANS """
+
+        f.write('\n*Filtering ANS*')
+
+        threshold = 8
+        for i in range(len(ans_eps_items)):
+            if ans_eps_items[i] >= threshold:
+                adv_sens_layers.append(i)
+        f.write('\n Layers above threshold({}):\n {}'.format(threshold, adv_sens_layers))
+
+        count = 0
+        layers = model.module.cfg
+        for l in layers:
+            if isinstance(l, int):
+                count += 1
+        layers = []
+        for i in range(count):
+            layers.append(i*3)
+        f.write('\n Actual layers in model:\n {}'.format(layers))
+        temp = []
+        for i in range(len(adv_sens_layers)):
+            if adv_sens_layers[i] in layers:
+                temp.append(adv_sens_layers[i])
+        adv_sens_layers = temp
+        f.write('\n Adversarially sensitive layers:\n {}'.format(adv_sens_layers))
+
+        f.write('\n*Finished filtering ANS*')
+
+
+        """ SAVING ANS """
+
+        f.write('\n*Saving ANS*')
+
+        try:
+            os.mkdir('./trained_models/snn_ans/')
+        except OSError:
+            pass
+
         #Save the adv_sens_layers in the ANN file
         temp = {}
         pretrained_ann = './trained_models/snn_ans/ann_'+architecture.lower()+'_'+dataset.lower()+'.pth'
@@ -589,6 +631,8 @@ if __name__ == '__main__':
         temp['adv_sens_layers'] = adv_sens_layers
         torch.save(temp, pretrained_ann)
         f.write('\n Info: adv_sens_layers saved to trained ANN')
+
+        f.write('\n*Finished saving ANS*')
     
     
     """ CONVERT TO SNN """
@@ -659,7 +703,6 @@ if __name__ == '__main__':
     model = nn.DataParallel(model) 
     
     if pretrained_ann:
-
         state = torch.load(pretrained_ann, map_location='cpu')
         cur_dict = model.state_dict()     
         for key in state['state_dict'].keys():
@@ -699,24 +742,27 @@ if __name__ == '__main__':
     if torch.cuda.is_available() and args.gpu:
         model.cuda()
     
-    ans_features = [12, 30]
-    ans_classifier = [0, 3, 6]
-    f.write('\n {} {}'.format(ans_features, ans_classifier))
+    # ans_features = [12, 30]
+    # ans_classifier = [0, 3, 6]
+    f.write('\n {}'.format(adv_sens_layers))
 
     for parameter in model.parameters():
         parameter.requires_grad = False
     for i in range(len(model.module.features)):
-        if i in ans_features:
+        if i in adv_sens_layers:
             for parameter in model.module.features[i].parameters():
                 parameter.requires_grad = True
-    for i in range(len(model.module.classifier)):
-        if i in ans_classifier:
-            for parameter in model.module.classifier[i].parameters():
-                parameter.requires_grad = True
+    # for i in range(len(model.module.classifier)):
+    #     if i in ans_classifier:
+    #         for parameter in model.module.classifier[i].parameters():
+    #             parameter.requires_grad = True
     
+    # for name, param in model.state_dict().items():
+    #     f.write('\n{}'.format(name))
+
     for name, param in model.named_parameters():
         if param.requires_grad:
-            f.write(name)
+            f.write('\n{}'.format(name))
 
     if optimizer == 'Adam':
         optimizer = optim.Adam(model.parameters(), lr=learning_rate, amsgrad=amsgrad, weight_decay=weight_decay)
@@ -729,11 +775,12 @@ if __name__ == '__main__':
     #print(model)
     #f.write('\n Threshold: {}'.format(model.module.threshold))
 
-    # for epoch in range(1, epochs):
-    #     start_time = datetime.datetime.now()
-    #     if not args.test_only:
-    #         train(epoch)
-    #     test(epoch)
+    for epoch in range(1, epochs):
+        start_time = datetime.datetime.now()
+        if not args.test_only:
+            train(epoch)
+        test(epoch)
 
-    # f.write('\n Highest accuracy: {:.4f}'.format(max_accuracy))
-    # f.write('\n Total script time: {}'.format(datetime.timedelta(seconds=(datetime.datetime.now() - now).seconds)))
+    f.write('\n Highest accuracy: {:.4f}'.format(max_accuracy))
+    f.write('\n Total script time: {}'.format(datetime.timedelta(seconds=(datetime.datetime.now() - now).seconds)))
+    f.close()
