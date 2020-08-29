@@ -157,6 +157,81 @@ def train(epoch):
                         )
                     )
 
+# FGSM attack code
+def fgsm_attack(image, epsilon, data_grad):
+    # Collect the element-wise sign of the data gradient
+    sign_data_grad = data_grad.sign()
+    # Create the perturbed image by adjusting each pixel of the input image
+    perturbed_image = image + epsilon*sign_data_grad
+    # Adding clipping to maintain [0,1] range
+    # perturbed_image = torch.clamp(perturbed_image, 0, 1)
+    # Return the perturbed image
+    return perturbed_image
+
+def testFGSM( test_loader, model, device, epsilon ):
+
+    # Accuracy counter
+    correct = 0
+    model.eval()
+
+    # Loop over all examples in test set
+    for batch_idx, (data, target) in enumerate(test_loader):
+
+        # # Send the data and label to the device
+        # data, target = data.to(device), target.to(device)
+        if torch.cuda.is_available() and args.gpu:
+            data, target = data.cuda(), target.cuda()
+
+        # Set requires_grad attribute of tensor. Important for Attack
+        data.requires_grad = True
+
+        # Forward pass the data through the model
+        output = model(data)
+        init_pred = output.max(1, keepdim=True)[1] # get the index of the max log-probability
+
+        # If the initial prediction is wrong, dont bother attacking, just move on
+        if init_pred.item() != target.item():
+            continue
+
+        # Calculate the loss
+        loss = F.nll_loss(output, target)
+
+        # Zero all existing gradients
+        model.zero_grad()
+
+        # Calculate gradients of model in backward pass
+        loss.backward()
+
+        # Collect datagrad
+        data_grad = data.grad.data
+
+        # Call FGSM Attack
+        perturbed_data = fgsm_attack(data, epsilon, data_grad)
+
+        # Re-classify the perturbed image
+        output, activations_adv = model(perturbed_data)
+
+        # Check for success
+        final_pred = output.max(1, keepdim=True)[1] # get the index of the max log-probability
+        if final_pred.item() == target.item():
+            correct += 1
+        #     # Special case for saving 0 epsilon examples
+        #     if (epsilon == 0) and (len(adv_examples) < 5):
+        #         adv_ex = perturbed_data.squeeze().detach().cpu().numpy()
+        #         adv_examples.append( (init_pred.item(), final_pred.item(), adv_ex) )
+        # else:
+        #     # Save some adv examples for visualization later
+        #     if len(adv_examples) < 5:
+        #         adv_ex = perturbed_data.squeeze().detach().cpu().numpy()
+        #         adv_examples.append( (init_pred.item(), final_pred.item(), adv_ex) )
+
+    # Calculate final accuracy for this epsilon
+    final_acc = correct/float(len(test_loader))
+    f.write("\n\tEpsilon: {}\tTest Accuracy = {} / {} = {}".format(epsilon, correct, len(test_loader), final_acc))
+
+    # Return the accuracy and an adversarial example
+    return final_acc, activations_adv
+
 def test(epoch):
 
     losses = AverageMeter('Loss')
@@ -214,7 +289,7 @@ def test(epoch):
                 os.mkdir('./trained_models/snn/')
             except OSError:
                 pass 
-            filename = './trained_models/snn/'+identifier+'.pth'
+            filename = './trained_models/snn/'+snn_identifier+'.pth'
             torch.save(state,filename)    
         
             #if is_best:
@@ -228,6 +303,36 @@ def test(epoch):
             datetime.timedelta(seconds=(datetime.datetime.now() - start_time).seconds)
             )
         )
+    
+    def calculate_ans(adv_activations, epsilons):
+        num_layers = len(adv_activations[0])
+        ans_eps = []
+        for eps in range(1,len(epsilons)):
+            ans=[]
+            #print(eps)
+            for i in range(num_layers):
+                a_clean = adv_activations[0][i] # epsilon 0 is clean
+                a_adv = adv_activations[eps][i] # absolute val of a_adv
+                Ans = torch.sum((a_clean-a_adv)**2, 1).sqrt()
+                ans.append(torch.mean(Ans))
+                del Ans
+            ans_eps.append(ans)
+            del ans
+        return ans_eps
+
+    def plot_ans(ans_eps, epsilons):
+        num_layers = len(ans_eps[0])
+        ans_eps_data = [list(x) for x in zip(epsilons[1:], ans_eps)]
+        plt.figure(figsize=(10,10))
+        for e in range(0, len(ans_eps_data)):
+            plt.plot(range(1, num_layers+1), ans_eps_data[e][1], "*-", label='e = {}'.format(ans_eps_data[e][0]))
+        plt.yticks(np.arange(0, 3, step=1))
+        plt.xticks(np.arange(1, num_layers+1, step=1))
+        plt.title("Adversarial Noise Sensitivity Ratio by Layer")
+        plt.xlabel("Layers")
+        plt.ylabel("ANS")
+        plt.legend()
+        plt.show()
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='SNN training')
@@ -308,14 +413,15 @@ if __name__ == '__main__':
     except OSError:
         pass 
 
-    #identifier = 'snn_'+architecture.lower()+'_'+dataset.lower()+'_'+str(timesteps)+'_'+str(datetime.datetime.now())
+    #snn_identifier = 'snn_'+architecture.lower()+'_'+dataset.lower()+'_'+str(timesteps)+'_'+str(datetime.datetime.now())
 
     # get current time
     now = datetime.datetime.now() # current date and time
     date_time = now.strftime('%m-%d-%Y_%H-%M-%S')
 
-    identifier = date_time+'_snn_'+architecture.lower()+'_'+dataset.lower()+'_'+str(timesteps)
-    log_file+=identifier+'.log'
+    ann_identifier = date_time+'_snn_'+architecture.lower()+'_'+dataset.lower()
+    snn_identifier = date_time+'_snn_'+architecture.lower()+'_'+dataset.lower()+'_'+str(timesteps)
+    log_file+=snn_identifier+'.log'
     
     if args.log:
         f = open(log_file, 'w', buffering=1)
@@ -323,11 +429,17 @@ if __name__ == '__main__':
         f = sys.stdout
 
     if not pretrained_ann:
-        ann_file = './trained_models/ann/ann_'+architecture.lower()+'_'+dataset.lower()+'.pth'
+        ann_file = './trained_models/snn_ans/ann_'+architecture.lower()+'_'+dataset.lower()+'.pth'
         if os.path.exists(ann_file):
             val = input('\n Do you want to use the pretrained ANN {}? Y or N: '.format(ann_file))
             if val.lower()=='y' or val.lower()=='yes':
                 pretrained_ann = ann_file
+        else:
+            ann_file = './trained_models/ann/ann_'+architecture.lower()+'_'+dataset.lower()+'.pth'
+            if os.path.exists(ann_file):
+                val = input('\n Do you want to use the pretrained ANN {}? Y or N: '.format(ann_file))
+                if val.lower()=='y' or val.lower()=='yes':
+                    pretrained_ann = ann_file
 
     f.write('\n Run on time: {}'.format(now))
 
@@ -341,9 +453,147 @@ if __name__ == '__main__':
             f.write('\n\t {:20} : {}'.format(arg, getattr(args,arg)))
     
     # Training settings
-    
     if torch.cuda.is_available() and args.gpu:
         torch.set_default_tensor_type('torch.cuda.FloatTensor')
+
+    adv_sens_layers = []
+    state = torch.load(pretrained_ann, map_location='cpu')
+    #If adv_sens_layers present in loaded ANN file
+    if 'adv_sens_layers' in state.keys():
+        adv_sens_layers = state['adv_sens_layers']
+        f.write('\n Info: adv_sens_layers loaded from trained ANN: {}'.format(adv_sens_layers))
+    else:
+
+        f.write('\n Info: adv_sens_layers not found in trained ANN')
+        f.write('\n Info: generating adv_sens_layers')
+
+        """ LOAD ANN """
+        
+        f.write('\n*Loading ANN*')
+
+        # Loading Dataset
+        if dataset == 'CIFAR100':
+            normalize   = transforms.Normalize((0.5071,0.4867,0.4408),(0.2675,0.2565,0.2761))
+            labels      = 100 
+        elif dataset == 'CIFAR10':
+            normalize   = transforms.Normalize((0.4914, 0.4822, 0.4465), (0.2023, 0.1994, 0.2010))
+            labels      = 10
+        elif dataset == 'MNIST':
+            labels = 10
+        
+        if dataset == 'CIFAR10' or dataset == 'CIFAR100':
+            # transform_train = transforms.Compose([
+            # transforms.RandomCrop(32, padding=4),
+            # transforms.RandomHorizontalFlip(),
+            # transforms.ToTensor(),
+            # normalize
+            # ])
+            transform_test = transforms.Compose([transforms.ToTensor(), normalize])
+        
+        if dataset == 'CIFAR100':
+            # train_dataset   = datasets.CIFAR100(root='~/Datasets/cifar_data', train=True, download=True,transform =transform_train)
+            test_dataset    = datasets.CIFAR100(root='~/Datasets/cifar_data', train=False, download=True, transform=transform_test)
+        
+        elif dataset == 'CIFAR10': 
+            # train_dataset   = datasets.CIFAR10(root='~/Datasets/cifar_data', train=True, download=True,transform =transform_train)
+            test_dataset    = datasets.CIFAR10(root='~/Datasets/cifar_data', train=False, download=True, transform=transform_test)
+        
+        elif dataset == 'MNIST':
+            # train_dataset   = datasets.MNIST(root='~/Datasets/mnist/', train=True, download=True, transform=transforms.ToTensor())
+            test_dataset    = datasets.MNIST(root='~/Datasets/mnist/', train=False, download=True, transform=transforms.ToTensor())
+        
+        # train_loader = torch.utils.data.DataLoader(dataset=train_dataset, batch_size=batch_size, shuffle=True)
+        # test_loader = torch.utils.data.DataLoader(dataset=test_dataset, batch_size=batch_size, shuffle=False)
+        test_loader_fgsm = torch.utils.data.DataLoader(dataset=test_dataset, batch_size=1, shuffle=True)
+        
+        if architecture[0:3].lower() == 'vgg':
+            model = VGG(vgg_name=architecture, labels=labels, dataset=dataset, kernel_size=kernel_size, dropout=dropout)
+        elif architecture[0:3].lower() == 'res':
+            if architecture.lower() == 'resnet12':
+                model = ResNet12(labels=labels, dropout=dropout)
+            elif architecture.lower() == 'resnet20':
+                model = ResNet20(labels=labels, dropout=dropout)
+            elif architecture.lower() == 'resnet34':
+                model = ResNet34(labels=labels, dropout=dropout) 
+        #f.write('\n{}'.format(model))
+        
+        #CIFAR100 sometimes has problem to start training
+        #One solution is to train for CIFAR10 with same architecture
+        #Load the CIFAR10 trained model except the final layer weights
+        model = nn.DataParallel(model)
+        if pretrained_ann:
+            cur_dict = model.state_dict()
+            # print(cur_dict)
+            for key in state['state_dict'].keys():
+                curKey = key
+                if 'module' not in curKey:
+                    curKey = 'module.' + key
+                if curKey in cur_dict:
+                    if (state['state_dict'][key].shape == cur_dict[curKey].shape):
+                        cur_dict[curKey] = nn.Parameter(state['state_dict'][key].data)
+                        f.write('\n Success [ANN]: Loaded {} from {}'.format(key, pretrained_ann))
+                    else:
+                        f.write('\n Error [ANN]: Size mismatch at {}, size of loaded model {}, size of current model {}'.format(key, state['state_dict'][key].shape, cur_dict[curKey].shape))
+                else:
+                    f.write('\n Error [ANN]: Loaded weight {} not present in current model'.format(key))
+            
+            model.load_state_dict(cur_dict)
+        
+        f.write('\n ANN: {}'.format(model)) 
+
+        if torch.cuda.is_available() and args.gpu:
+            model.cuda()
+
+        f.write('\n*Finished loading ANN*')
+
+
+        """ ATTACK ANN """
+
+        f.write('\n*Attacking ANN*')
+
+        epsilons = [0, .5]
+        f.write('\n {}'.format(epsilons))
+        device = torch.device("cuda" if (args.gpu and torch.cuda.is_available()) else "cpu")
+
+        # Run test for each epsilon
+        adv_activations = [] # activations of last batch of each epsilon*** batch size of 64
+        for eps in epsilons:
+            adv_acc, adv_acts = testFGSM(test_loader_fgsm, model, device, eps)
+            adv_activations.append(adv_acts) # activations of last batch
+        f.write('\n Adversarial activations:\n {}'.format(adv_activations))
+
+        f.write('\n*Finished attacking ANN*')
+
+        
+        """ GET ANS """
+
+        f.write('\n*Getting ANS*')
+
+        ans_eps = calculate_ans(adv_activations, epsilons)
+        f.write('\n ANS values:\n {}'.format(ans_eps))
+        plot_ans(ans_eps, epsilons)
+
+        threshold = 2
+        for i in range(len(ans_eps[-1])):
+            if ans_eps[-1][i] >= threshold:
+                adv_sens_layers.append(i)
+        f.write('\n Adversarially sensitive layers:\n {}'.format(adv_sens_layers))
+
+        f.write('\n*Finished getting ANS*')
+        
+        #Save the adv_sens_layers in the ANN file
+        temp = {}
+        pretrained_ann = './trained_models/snn_ans/ann_'+architecture.lower()+'_'+dataset.lower()+'.pth'
+        for key,value in state.items():
+            temp[key] = value
+        temp['adv_sens_layers'] = adv_sens_layers
+        torch.save(temp, pretrained_ann)
+        f.write('\n Info: adv_sens_layers saved to trained ANN')
+    
+    
+    """ CONVERT TO SNN """
+
+    f.write('\n*Converting to SNN*')
 
     normalize = transforms.Normalize(mean = [0.5, 0.5, 0.5], std = [0.5, 0.5, 0.5])
     
@@ -442,29 +692,6 @@ if __name__ == '__main__':
                 temp[key] = value
             temp['thresholds'] = thresholds
             torch.save(temp, pretrained_ann)
-    
-    if pretrained_snn:
-                
-        state = torch.load(pretrained_snn, map_location='cpu')
-        cur_dict = model.state_dict()     
-        for key in state['state_dict'].keys():
-            if key in cur_dict:
-                if (state['state_dict'][key].shape == cur_dict[key].shape):
-                    cur_dict[key] = nn.Parameter(state['state_dict'][key].data)
-                    f.write('\n Loaded {} from {}'.format(key, pretrained_snn))
-                else:
-                    f.write('\n Size mismatch, size of loaded model {}, size of current model {}'.format(state['state_dict'][key].shape, model.state_dict()[key].shape))
-            else:
-                f.write('\n Loaded weight {} not present in current model'.format(state['state_dict'][key]))
-        model.load_state_dict(cur_dict)
-
-        if 'thresholds' in state.keys():
-            if state['timesteps']!=timesteps or state['leak']!=leak:
-                f.write('\n Timesteps/Leak mismatch between loaded SNN and current simulation timesteps/leak, current timesteps/leak {}/{}, loaded timesteps/leak {}/{}'.format(timesteps, leak, state['timesteps'], state['leak']))
-            thresholds = state['thresholds']
-            model.module.threshold_update(scaling_factor = 1.0, thresholds=thresholds[:])
-        else:
-            f.write('\n Loaded SNN model does not have thresholds')
 
     f.write('\n {}'.format(model))
     
@@ -474,7 +701,7 @@ if __name__ == '__main__':
     
     ans_features = [12, 30]
     ans_classifier = [0, 3, 6]
-    print('\n', ans_features, ans_classifier)
+    f.write('\n {} {}'.format(ans_features, ans_classifier))
 
     for parameter in model.parameters():
         parameter.requires_grad = False
@@ -489,7 +716,7 @@ if __name__ == '__main__':
     
     for name, param in model.named_parameters():
         if param.requires_grad:
-            print(name)
+            f.write(name)
 
     if optimizer == 'Adam':
         optimizer = optim.Adam(model.parameters(), lr=learning_rate, amsgrad=amsgrad, weight_decay=weight_decay)
@@ -497,10 +724,10 @@ if __name__ == '__main__':
         optimizer = optim.SGD(model.parameters(), lr=learning_rate, weight_decay=weight_decay, momentum=momentum)
     
     f.write('\n {}'.format(optimizer))
-    # max_accuracy = 0
+    max_accuracy = 0
     
-    # #print(model)
-    # #f.write('\n Threshold: {}'.format(model.module.threshold))
+    #print(model)
+    #f.write('\n Threshold: {}'.format(model.module.threshold))
 
     # for epoch in range(1, epochs):
     #     start_time = datetime.datetime.now()
