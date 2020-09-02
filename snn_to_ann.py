@@ -435,6 +435,13 @@ if __name__ == '__main__':
         ann_prime_accuracies_fgsm.append(acc)
         ann_prime_examples_fgsm.append(ex)
 
+    # Calculate adversarial loss
+    ann_adv_losses = []
+    ann_prime_adv_losses = []
+    for i in range(0, len(epsilons)):
+        ann_adv_losses[i] = ann_accuracies_fgsm[0] - ann_accuracies_fgsm[i]
+        ann_prime_adv_losses[i] = ann_prime_accuracies_fgsm[0] - ann_prime_accuracies_fgsm[i]
+
     f.write('\n\n ' + ann_identifier + ' summary')
     f.write('\n\ttest_loss: {:.4f}, test_acc: {:.4f}, time: {}'.format(
             ann_state['test_loss'], 
@@ -444,6 +451,7 @@ if __name__ == '__main__':
         )
     f.write('\n\tepsilons: {}'.format(epsilons))
     f.write('\n\tfgsm accuracies: {}'.format(ann_accuracies_fgsm))
+    f.write('\n\tfgsm adv losses: {}'.format(ann_adv_losses))
 
     f.write('\n\n ' + ann_prime_identifier + ' summary')
     f.write('\n\ttest_loss: {:.4f}, test_acc: {:.4f}, time: {}'.format(
@@ -454,15 +462,16 @@ if __name__ == '__main__':
         )
     f.write('\n\tepsilons: {}'.format(epsilons))
     f.write('\n\tfgsm accuracies: {}'.format(ann_prime_accuracies_fgsm))
+    f.write('\n\tfgsm adv losses: {}'.format(ann_prime_adv_losses))
     
     plt.figure(figsize=(5,5))
-    plt.plot(epsilons, ann_accuracies_fgsm, label='ANN')
-    plt.plot(epsilons, ann_prime_accuracies_fgsm, label='ANN\'')
+    plt.plot(epsilons, ann_adv_losses, label='ANN')
+    plt.plot(epsilons, ann_prime_adv_losses, label='ANN\'')
     plt.yticks(np.arange(0, 1.1, step=0.1))
     plt.xticks(np.arange(0, .35, step=0.05))
-    plt.title("Accuracy vs Epsilon [{}]".format(log_file[18:-4]))
+    plt.title("Adv Loss vs Epsilon [{}]".format(log_file[18:-4]))
     plt.xlabel("Epsilon")
-    plt.ylabel("Accuracy")
+    plt.ylabel("Adversarial Loss")
     plt.legend()
     plt.savefig('./logs/snn_to_ann/'+log_file[18:-4]+'.png', bbox_inches='tight')
 
