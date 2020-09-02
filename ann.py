@@ -198,7 +198,11 @@ if __name__ == '__main__':
         pass 
     
     #identifier = 'ann_'+architecture.lower()+'_'+dataset.lower()+'_'+str(datetime.datetime.now())
-    identifier = 'ann_'+architecture.lower()+'_'+dataset.lower()
+    # get current time
+    now = datetime.datetime.now() # current date and time
+    date_time = now.strftime('%m-%d-%Y_%H-%M-%S')
+
+    identifier = date_time+'_ann_'+architecture.lower()+'_'+dataset.lower()
     log_file+=identifier+'.log'
     
     if args.log:
@@ -207,7 +211,7 @@ if __name__ == '__main__':
         f=sys.stdout
     
     
-    f.write('\n Run on time: {}'.format(datetime.datetime.now()))
+    f.write('\n Run on time: {}'.format(now))
             
     f.write('\n\n Arguments:')
     for arg in vars(args):
@@ -300,9 +304,10 @@ if __name__ == '__main__':
     max_accuracy = 0
     
     for epoch in range(1, epochs):
-        
         start_time = datetime.datetime.now()
         train(epoch, train_loader)
         test(test_loader)
 
     f.write('\n Highest accuracy: {:.4f}'.format(max_accuracy))
+    f.write('\n\n Total script time: {}'.format(datetime.timedelta(days=(datetime.datetime.now() - now).days, seconds=(datetime.datetime.now() - now).seconds)))
+    f.close()

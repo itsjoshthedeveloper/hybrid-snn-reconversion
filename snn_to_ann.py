@@ -477,5 +477,5 @@ if __name__ == '__main__':
 
     # f.write('\n ANN accuracy: {:.4f}'.format(ann_accuracy))
     # f.write('\n ANN\' accuracy: {:.4f}'.format(ann_prime_accuracy))
-    f.write('\n\n Total script time: {}'.format(datetime.timedelta(seconds=(datetime.datetime.now() - now).seconds)))
+    f.write('\n\n Total script time: {}'.format(datetime.timedelta(days=(datetime.datetime.now() - now).days, seconds=(datetime.datetime.now() - now).seconds)))
     f.close()
