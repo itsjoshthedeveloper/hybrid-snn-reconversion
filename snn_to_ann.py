@@ -71,31 +71,34 @@ def testFGSM( test_loader, model, device, epsilon ):
         # Set requires_grad attribute of tensor. Important for Attack
         data.requires_grad = True
 
-        # Forward pass the data through the model
-        output = model(data)
-        init_pred = output.max(1, keepdim=True)[1] # get the index of the max log-probability
+        if epsilon == 0:
+            perturbed_data = data
+        else:
+            # Forward pass the data through the model
+            output, _ = model(data)
+            init_pred = output.max(1, keepdim=True)[1] # get the index of the max log-probability
 
-        # If the initial prediction is wrong, dont bother attacking, just move on
-        if init_pred.item() != target.item():
-            continue
+            # If the initial prediction is wrong, dont bother attacking, just move on
+            if init_pred.item() != target.item():
+                continue
 
-        # Calculate the loss
-        loss = F.nll_loss(output, target)
+            # Calculate the loss
+            loss = F.nll_loss(output, target)
 
-        # Zero all existing gradients
-        model.zero_grad()
+            # Zero all existing gradients
+            model.zero_grad()
 
-        # Calculate gradients of model in backward pass
-        loss.backward()
+            # Calculate gradients of model in backward pass
+            loss.backward()
 
-        # Collect datagrad
-        data_grad = data.grad.data
+            # Collect datagrad
+            data_grad = data.grad.data
 
-        # Call FGSM Attack
-        perturbed_data = fgsm_attack(data, epsilon, data_grad)
+            # Call FGSM Attack
+            perturbed_data = fgsm_attack(data, epsilon, data_grad)
 
         # Re-classify the perturbed image
-        output = model(perturbed_data)
+        output, _ = model(perturbed_data)
 
         # Check for success
         final_pred = output.max(1, keepdim=True)[1] # get the index of the max log-probability
@@ -104,10 +107,10 @@ def testFGSM( test_loader, model, device, epsilon ):
             # Special case for saving 0 epsilon examples
             if (epsilon == 0) and (len(adv_examples) < 5):
                 adv_ex = perturbed_data.squeeze().detach().cpu().numpy()
-                adv_examples.append( (init_pred.item(), final_pred.item(), adv_ex) )
+                adv_examples.append( (final_pred.item(), final_pred.item(), adv_ex) )
         else:
             # Save some adv examples for visualization later
-            if len(adv_examples) < 5:
+            if (epsilon != 0) and len(adv_examples) < 5:
                 adv_ex = perturbed_data.squeeze().detach().cpu().numpy()
                 adv_examples.append( (init_pred.item(), final_pred.item(), adv_ex) )
 
@@ -133,7 +136,7 @@ def test(loader, model, identifier):
             if torch.cuda.is_available() and args.gpu:
                 data, target = data.cuda(), target.cuda()
             
-            output = model(data)
+            output, _ = model(data)
             loss = F.cross_entropy(output,target)
             total_loss += loss.item()
             pred = output.max(1, keepdim=True)[1]
