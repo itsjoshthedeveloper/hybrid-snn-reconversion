@@ -289,10 +289,10 @@ def test(epoch):
                     'activation'            : activation
                 }
             try:
-                os.mkdir('./trained_models/snn/')
+                os.mkdir('./trained_models/snn_ans/')
             except OSError:
                 pass 
-            filename = './trained_models/snn/'+snn_identifier+'.pth'
+            filename = './trained_models/snn_ans/'+snn_identifier+'.pth'
             torch.save(state,filename)    
         
             #if is_best:
@@ -328,7 +328,7 @@ def plot_ans(ans_eps, epsilons, ann_identifier):
     ans_eps_data = [list(x) for x in zip(epsilons[1:], ans_eps)]
     plt.figure(figsize=(10,10))
     for e in range(0, len(ans_eps_data)):
-        plt.plot(range(1, num_layers+1), ans_eps_data[e][1], "*-", label='e = {}'.format(ans_eps_data[e][0]))
+        plt.plot(range(0, num_layers), ans_eps_data[e][1], "*-", label='e = {}'.format(ans_eps_data[e][0]))
     plt.yticks(np.arange(0, max(ans_eps[-1]).item(), step=1))
     plt.xticks(np.arange(0, num_layers, step=1))
     plt.title("Adversarial Noise Sensitivity Ratio by Layer")
@@ -589,7 +589,7 @@ if __name__ == '__main__':
 
         f.write('\n*Filtering ANS*')
 
-        threshold = 8
+        threshold = 2
         for i in range(len(ans_eps_items)):
             if ans_eps_items[i] >= threshold:
                 adv_sens_layers.append(i)
