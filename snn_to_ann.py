@@ -439,8 +439,8 @@ if __name__ == '__main__':
     ann_adv_losses = []
     ann_prime_adv_losses = []
     for i in range(0, len(epsilons)):
-        ann_adv_losses[i] = ann_accuracies_fgsm[0] - ann_accuracies_fgsm[i]
-        ann_prime_adv_losses[i] = ann_prime_accuracies_fgsm[0] - ann_prime_accuracies_fgsm[i]
+        ann_adv_losses.append(ann_accuracies_fgsm[0] - ann_accuracies_fgsm[i])
+        ann_prime_adv_losses.append(ann_prime_accuracies_fgsm[0] - ann_prime_accuracies_fgsm[i])
 
     f.write('\n\n ' + ann_identifier + ' summary')
     f.write('\n\ttest_loss: {:.4f}, test_acc: {:.4f}, time: {}'.format(
