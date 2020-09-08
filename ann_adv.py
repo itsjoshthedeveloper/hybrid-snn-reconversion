@@ -53,7 +53,6 @@ def train(epoch, loader, epsilon, adv_data):
 
     global learning_rate
     adv_batch = False
-    batch_count = 0
     
     losses = AverageMeter('Loss')
     top1   = AverageMeter('Acc@1')
@@ -128,7 +127,6 @@ def train(epoch, loader, epsilon, adv_data):
         # print('Adversarial batch? {} \tBatch #{}'.format(adv_batch, batch_count))
         if adv_data:
             adv_batch = not adv_batch
-        batch_count += 1
         
     f.write('\n Epoch: {}, lr: {:.1e}, train_loss: {:.4f}, train_acc: {:.4f}'.format(
             epoch,
@@ -138,61 +136,100 @@ def train(epoch, loader, epsilon, adv_data):
             )
         )
 
-def test(loader):
+def test(loader, epsilon, adv_data):
 
     losses = AverageMeter('Loss')
     top1   = AverageMeter('Acc@1')
 
-    with torch.no_grad():
-        model.eval()
-        total_loss = 0
-        correct = 0
-        global max_accuracy, start_time
-        
-        for batch_idx, (data, target) in enumerate(loader):
-                        
-            if torch.cuda.is_available() and args.gpu:
-                data, target = data.cuda(), target.cuda()
-            
+    model.eval()
+    total_loss = 0
+    correct = 0
+    global max_accuracy, start_time
+    
+    for batch_idx, (data, target) in enumerate(loader):
+                    
+        if torch.cuda.is_available() and args.gpu:
+            data, target = data.cuda(), target.cuda()
+
+        if adv_data == False:
+            perturbed_data = data
+        else:
+            # Set requires_grad attribute of tensor. Important for Attack
+            data.requires_grad = True
+
+            # print('\nData: {}\nTarget: {}\n'.format(data, target))
+            # Forward pass the data through the model
             output, _ = model(data)
-            loss = F.cross_entropy(output,target)
-            total_loss += loss.item()
-            pred = output.max(1, keepdim=True)[1]
-            correct = pred.eq(target.data.view_as(pred)).cpu().sum()
-            losses.update(loss.item(), data.size(0))
-            top1.update(correct.item()/data.size(0), data.size(0))
+            # print('Output: {}'.format(output))
+            # print('Output.max: {}'.format(output.max(1, keepdim=True)))
+            # print('Output.max[1]: {}'.format(output.max(1, keepdim=True)[1].reshape(1, -1).squeeze()))
+            init_pred = output.max(1, keepdim=True)[1].reshape(1, -1).squeeze() # get the index of the max log-probability
 
-        if epoch>30 and top1.avg<0.15:
-            f.write('\n Quitting as the training is not progressing')
-            exit(0)
+            # print('\nInitial_pred.item(): {}\nTarget.item(): {}\n'.format(init_pred.item(), target.item()))
+            # # If the initial prediction is wrong, dont bother attacking, just move on
+            # if init_pred.item() != target.item():
+            #     continue
 
-        if top1.avg>max_accuracy:
-            max_accuracy = top1.avg
-            state = {
-                    'accuracy'      : max_accuracy,
-                    'epoch'         : epoch,
-                    'state_dict'    : model.state_dict(),
-                    'optimizer'     : optimizer.state_dict()
-            }
-            try:
-                os.mkdir('./trained_models/ann_adv/')
-            except OSError:
-                pass
-            
-            filename = './trained_models/ann_adv/'+identifier+'.pth'
-            torch.save(state,filename)
-            
-        f.write(' test_loss: {:.4f}, test_acc: {:.4f}, best: {:.4f}, time: {}'.  format(
-            losses.avg, 
-            top1.avg,
-            max_accuracy,
-            datetime.timedelta(seconds=(datetime.datetime.now() - start_time).seconds)
-            )
+            # Calculate the loss
+            loss = F.nll_loss(output, target)
+            # print('Loss: {}'.format(loss))
+
+            # Zero all existing gradients
+            model.zero_grad()
+
+            # Calculate gradients of model in backward pass
+            loss.backward()
+
+            # Collect datagrad
+            data_grad = data.grad.data
+
+            # Call FGSM Attack
+            perturbed_data = fgsm_attack(data, epsilon, data_grad)
+            # print('Perturbed data: {}'.format(perturbed_data))
+
+        optimizer.zero_grad()
+        
+        # Re-classify the perturbed image
+        output, activations_adv = model(perturbed_data)
+
+        loss = F.cross_entropy(output,target)
+        total_loss += loss.item()
+        pred = output.max(1, keepdim=True)[1]
+        correct = pred.eq(target.data.view_as(pred)).cpu().sum()
+        losses.update(loss.item(), data.size(0))
+        top1.update(correct.item()/data.size(0), data.size(0))
+
+    if epoch>30 and top1.avg<0.15:
+        f.write('\n Quitting as the training is not progressing')
+        exit(0)
+
+    if top1.avg>max_accuracy:
+        max_accuracy = top1.avg
+        state = {
+                'accuracy'      : max_accuracy,
+                'epoch'         : epoch,
+                'state_dict'    : model.state_dict(),
+                'optimizer'     : optimizer.state_dict()
+        }
+        try:
+            os.mkdir('./trained_models/ann_adv/')
+        except OSError:
+            pass
+        
+        filename = './trained_models/ann_adv/'+identifier+'.pth'
+        torch.save(state,filename)
+        
+    f.write(' test_loss: {:.4f}, test_acc: {:.4f}, best: {:.4f}, time: {}'.  format(
+        losses.avg, 
+        top1.avg,
+        max_accuracy,
+        datetime.timedelta(seconds=(datetime.datetime.now() - start_time).seconds)
         )
-        # f.write('\n Time: {}'.format(
-        #     datetime.timedelta(seconds=(datetime.datetime.now() - current_time).seconds)
-        #     )
-        # )
+    )
+    # f.write('\n Time: {}'.format(
+    #     datetime.timedelta(seconds=(datetime.datetime.now() - current_time).seconds)
+    #     )
+    # )
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Train ANN to be later converted to SNN', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -216,7 +253,7 @@ if __name__ == '__main__':
     parser.add_argument('--kernel_size',            default=3,                  type=int,       help='filter size for the conv layers')
     parser.add_argument('--devices',                default='0',                type=str,       help='list of gpu device(s)')
     parser.add_argument('-eps','--epsilon',         default=8/255,              type=float,     help='epsilon to train at')
-    parser.add_argument('--adv_data',               default=False,              type=bool,       help='enable training with half clean and half adversarial data')
+    parser.add_argument('--adv_data',               default=True,              type=bool,       help='enable training with half clean and half adversarial data')
     
     args=parser.parse_args()
 
@@ -367,7 +404,7 @@ if __name__ == '__main__':
     for epoch in range(1, epochs):
         start_time = datetime.datetime.now()
         train(epoch, train_loader, epsilon, adv_data)
-        test(test_loader)
+        test(test_loader, epsilon, adv_data)
 
     f.write('\n Highest accuracy: {:.4f}'.format(max_accuracy))
     f.write('\n\n Total script time: {}'.format(datetime.timedelta(days=(datetime.datetime.now() - now).days, seconds=(datetime.datetime.now() - now).seconds)))

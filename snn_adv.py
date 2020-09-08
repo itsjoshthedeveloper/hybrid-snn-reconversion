@@ -212,77 +212,114 @@ def train(epoch, epsilon, adv_data):
                         )
                     )
 
-def test(epoch):
+def test(epoch, epsilon, adv_data):
 
     losses = AverageMeter('Loss')
     top1   = AverageMeter('Acc@1')
 
-    with torch.no_grad():
-        model.eval()
-        global max_accuracy
-        
-        for batch_idx, (data, target) in enumerate(test_loader):
-                        
-            if torch.cuda.is_available() and args.gpu:
-                data, target = data.cuda(), target.cuda()
-            
-            output  = model(data) 
-            loss    = F.cross_entropy(output,target)
-            pred    = output.max(1,keepdim=True)[1]
-            correct = pred.eq(target.data.view_as(pred)).cpu().sum()
+    model.eval()
+    global max_accuracy
+    
+    for batch_idx, (data, target) in enumerate(test_loader):
+                    
+        if torch.cuda.is_available() and args.gpu:
+            data, target = data.cuda(), target.cuda()
 
-            losses.update(loss.item(),data.size(0))
-            top1.update(correct.item()/data.size(0), data.size(0))
+        if adv_data == False:
+            perturbed_data = data
+        else:
+            # Set requires_grad attribute of tensor. Important for Attack
+            data.requires_grad = True
+
+            # print('\nData: {}\nTarget: {}\n'.format(data, target))
+            # Forward pass the data through the model
+            output = model(data)
+            # print('Output: {}'.format(output))
+            # print('Output.max: {}'.format(output.max(1, keepdim=True)))
+            # print('Output.max[1]: {}'.format(output.max(1, keepdim=True)[1].reshape(1, -1).squeeze()))
+            init_pred = output.max(1, keepdim=True)[1].reshape(1, -1).squeeze() # get the index of the max log-probability
+
+            # print('\nInitial_pred.item(): {}\nTarget.item(): {}\n'.format(init_pred.item(), target.item()))
+            # # If the initial prediction is wrong, dont bother attacking, just move on
+            # if init_pred.item() != target.item():
+            #     continue
+
+            # Calculate the loss
+            loss = F.nll_loss(output, target)
+            # print('Loss: {}'.format(loss))
+
+            # Zero all existing gradients
+            model.zero_grad()
+
+            # Calculate gradients of model in backward pass
+            loss.backward()
+
+            # Collect datagrad
+            data_grad = data.grad.data
+
+            # Call FGSM Attack
+            perturbed_data = fgsm_attack(data, epsilon, data_grad)
+            # print('Perturbed data: {}'.format(perturbed_data))
+
+        optimizer.zero_grad()
+        
+        output  = model(data) 
+        loss    = F.cross_entropy(output,target)
+        pred    = output.max(1,keepdim=True)[1]
+        correct = pred.eq(target.data.view_as(pred)).cpu().sum()
+
+        losses.update(loss.item(),data.size(0))
+        top1.update(correct.item()/data.size(0), data.size(0))
+        
+        if test_acc_every_batch:
             
-            if test_acc_every_batch:
-                
-                f.write('\nAccuracy: {}/{}({:.4f})'
-                    .format(
-                    correct.item(),
-                    data.size(0),
-                    top1.avg
-                    )
+            f.write('\nAccuracy: {}/{}({:.4f})'
+                .format(
+                correct.item(),
+                data.size(0),
+                top1.avg
                 )
-        
-        temp1 = []
-        for value in model.module.threshold.values():
-            temp1 = temp1+[value.item()]    
-        
-        if epoch>5 and top1.avg<0.15:
-            f.write('\n Quitting as the training is not progressing')
-            exit(0)
-
-        if top1.avg>max_accuracy:
-            max_accuracy = top1.avg
-
-            state = {
-                    'accuracy'              : max_accuracy,
-                    'epoch'                 : epoch,
-                    'state_dict'            : model.state_dict(),
-                    'optimizer'             : optimizer.state_dict(),
-                    'thresholds'            : temp1,
-                    'timesteps'             : timesteps,
-                    'leak'                  : leak,
-                    'activation'            : activation
-                }
-            try:
-                os.mkdir('./trained_models/snn_adv/')
-            except OSError:
-                pass 
-            filename = './trained_models/snn_adv/'+identifier+'.pth'
-            torch.save(state,filename)    
-        
-            #if is_best:
-            #    shutil.copyfile(filename, 'best_'+filename)
-
-        f.write(' test_loss: {:.4f}, test_acc: {:.4f}, best: {:.4f} time: {}'
-            .format(
-            losses.avg, 
-            top1.avg,
-            max_accuracy,
-            datetime.timedelta(seconds=(datetime.datetime.now() - start_time).seconds)
             )
+    
+    temp1 = []
+    for value in model.module.threshold.values():
+        temp1 = temp1+[value.item()]    
+    
+    if epoch>5 and top1.avg<0.15:
+        f.write('\n Quitting as the training is not progressing')
+        exit(0)
+
+    if top1.avg>max_accuracy:
+        max_accuracy = top1.avg
+
+        state = {
+                'accuracy'              : max_accuracy,
+                'epoch'                 : epoch,
+                'state_dict'            : model.state_dict(),
+                'optimizer'             : optimizer.state_dict(),
+                'thresholds'            : temp1,
+                'timesteps'             : timesteps,
+                'leak'                  : leak,
+                'activation'            : activation
+            }
+        try:
+            os.mkdir('./trained_models/snn_adv/')
+        except OSError:
+            pass 
+        filename = './trained_models/snn_adv/'+identifier+'.pth'
+        torch.save(state,filename)    
+    
+        #if is_best:
+        #    shutil.copyfile(filename, 'best_'+filename)
+
+    f.write(' test_loss: {:.4f}, test_acc: {:.4f}, best: {:.4f} time: {}'
+        .format(
+        losses.avg, 
+        top1.avg,
+        max_accuracy,
+        datetime.timedelta(seconds=(datetime.datetime.now() - start_time).seconds)
         )
+    )
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='SNN training')
@@ -452,7 +489,7 @@ if __name__ == '__main__':
                             ])) 
 
     train_loader    = DataLoader(trainset, batch_size=batch_size, shuffle=True)
-    test_loader     = DataLoader(testset, batch_size=batch_size, shuffle=False)
+    test_loader     = DataLoader(testset, batch_size=int(batch_size/2), shuffle=False)
 
     if architecture[0:3].lower() == 'vgg':
         model = VGG_SNN_STDB(vgg_name = architecture, activation = activation, labels=labels, timesteps=timesteps, leak=leak, default_threshold=default_threshold, alpha=alpha, beta=beta, dropout=dropout, kernel_size=kernel_size, dataset=dataset)
@@ -546,7 +583,7 @@ if __name__ == '__main__':
         start_time = datetime.datetime.now()
         if not args.test_only:
             train(epoch, epsilon, adv_data)
-        test(epoch)
+        test(epoch, epsilon, adv_data)
 
     f.write('\n Highest accuracy: {:.4f}'.format(max_accuracy))
     f.write('\n\n Total script time: {}'.format(datetime.timedelta(days=(datetime.datetime.now() - now).days, seconds=(datetime.datetime.now() - now).seconds)))
