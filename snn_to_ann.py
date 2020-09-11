@@ -189,7 +189,7 @@ def test(loader, model, identifier):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Reconvert SNN to ANN', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument('--gpu',                    default=False,              type=bool,      help='use gpu')
+    parser.add_argument('--gpu',                    default=True,              type=bool,      help='use gpu')
     parser.add_argument('--log',                    action='store_true',                        help='to print the output on terminal or to log file')
     parser.add_argument('-s','--seed',              default=0,                  type=int,       help='seed for random number')
     parser.add_argument('--dataset',                default='CIFAR10',          type=str,       help='dataset name', choices=['MNIST','CIFAR10','CIFAR100'])
@@ -197,6 +197,7 @@ if __name__ == '__main__':
     parser.add_argument('-a','--architecture',      default='VGG16',             type=str,       help='network architecture', choices=['VGG5','VGG9','VGG11','VGG13','VGG16','VGG19','RESNET12','RESNET20','RESNET34'])
     # parser.add_argument('-lr','--learning_rate',    default=1e-2,               type=float,     help='initial learning_rate')
     parser.add_argument('--pretrained_ann',         default='',                 type=str,       help='pretrained model to initialize ANN')
+    parser.add_argument('--pretrained_ann_adv',     default='',                 type=str,       help='pretrained model to initialize ANN_adv')
     parser.add_argument('--pretrained_snn',         default='',                 type=str,       help='pretrained SNN for reconversion to model_prime')
     # parser.add_argument('--test_only',              action='store_true',                        help='perform only inference')
     # parser.add_argument('--epochs',                 default=300,                type=int,       help='number of training epochs')
@@ -227,6 +228,7 @@ if __name__ == '__main__':
     architecture    = args.architecture
     # learning_rate   = args.learning_rate
     pretrained_ann  = args.pretrained_ann
+    pretrained_ann_adv  = args.pretrained_ann_adv
     pretrained_snn  = args.pretrained_snn
     # epochs          = args.epochs
     # lr_reduce       = args.lr_reduce
@@ -251,7 +253,7 @@ if __name__ == '__main__':
             else:
                 print('No pretrained ANN found/loaded')
                 sys.exit()
-    
+
     if not pretrained_snn:
         snn_file = './trained_models/snn/snn_'+architecture.lower()+'_'+dataset.lower()+'.pth'
         if os.path.exists(snn_file):
@@ -279,6 +281,7 @@ if __name__ == '__main__':
     
     #identifier = 'ann_'+architecture.lower()+'_'+dataset.lower()+'_'+str(datetime.datetime.now())
     ann_identifier = 'ann_'+architecture.lower()+'_'+dataset.lower()
+    ann_adv_identifier = 'ann_'+architecture.lower()+'_'+dataset.lower()+'_adv'
     ann_prime_identifier = 'ann_'+architecture.lower()+'_'+dataset.lower()+'_prime'
     log_file += date_time+'_'+ann_identifier+'.log'
     
@@ -343,6 +346,7 @@ if __name__ == '__main__':
     
     if architecture[0:3].lower() == 'vgg':
         model = VGG(vgg_name=architecture, labels=labels, dataset=dataset, kernel_size=kernel_size, dropout=dropout)
+        model_adv = VGG(vgg_name=architecture, labels=labels, dataset=dataset, kernel_size=kernel_size, dropout=dropout)
         model_prime = VGG(vgg_name=architecture, labels=labels, dataset=dataset, kernel_size=kernel_size, dropout=dropout)
     elif architecture[0:3].lower() == 'res':
         if architecture.lower() == 'resnet12':
@@ -376,7 +380,29 @@ if __name__ == '__main__':
         
         model.load_state_dict(cur_dict)
     
-    f.write('\n ANN: {}'.format(model)) 
+    f.write('\n ANN: {}'.format(model))
+
+    model_adv = nn.DataParallel(model_adv)
+    if pretrained_ann_adv:
+        state = torch.load(pretrained_ann_adv, map_location='cpu')
+        cur_dict = model_adv.state_dict()
+        # print(cur_dict)
+        for key in state['state_dict'].keys():
+            curKey = key
+            if 'module' not in curKey:
+                curKey = 'module.' + key
+            if curKey in cur_dict:
+                if (state['state_dict'][key].shape == cur_dict[curKey].shape):
+                    cur_dict[curKey] = nn.Parameter(state['state_dict'][key].data)
+                    f.write('\n Success [ANN_adv]: Loaded {} from {}'.format(key, pretrained_ann_adv))
+                else:
+                    f.write('\n Error [ANN_adv]: Size mismatch at {}, size of loaded model {}, size of current model {}'.format(key, state['state_dict'][key].shape, cur_dict[curKey].shape))
+            else:
+                f.write('\n Error [ANN_adv]: Loaded weight {} not present in current model'.format(key))
+        
+        model_adv.load_state_dict(cur_dict)
+    
+    f.write('\n ANN_adv: {}'.format(model_adv)) 
 
     model_prime = nn.DataParallel(model_prime)
     if pretrained_snn:
@@ -398,6 +424,7 @@ if __name__ == '__main__':
     
     if torch.cuda.is_available() and args.gpu:
         model.cuda()
+        model_adv.cuda()
         model_prime.cuda()
     
     # if optimizer == 'SGD':
@@ -413,12 +440,16 @@ if __name__ == '__main__':
     start_time = datetime.datetime.now()
     ann_state = test(test_loader, model, ann_identifier)
     start_time = datetime.datetime.now()
+    ann_adv_state = test(test_loader, model_adv, ann_adv_identifier)
+    start_time = datetime.datetime.now()
     ann_prime_state = test(test_loader, model_prime, ann_prime_identifier)
 
     epsilons = [0, .05, .1, .15, .2, .25, .3]
     device = torch.device("cuda" if (args.gpu and torch.cuda.is_available()) else "cpu")
     ann_accuracies_fgsm = []
     ann_examples_fgsm = []
+    ann_adv_accuracies_fgsm = []
+    ann_adv_examples_fgsm = []
     ann_prime_accuracies_fgsm = []
     ann_prime_examples_fgsm = []
 
@@ -429,6 +460,12 @@ if __name__ == '__main__':
         ann_accuracies_fgsm.append(acc)
         ann_examples_fgsm.append(ex)
 
+    f.write('\n\n' + ann_adv_identifier)
+    for eps in epsilons:
+        acc, ex = testFGSM(test_loader_fgsm, model_adv, device, eps)
+        ann_adv_accuracies_fgsm.append(acc)
+        ann_adv_examples_fgsm.append(ex)
+
     f.write('\n\n' + ann_prime_identifier)
     for eps in epsilons:
         acc, ex = testFGSM(test_loader_fgsm, model_prime, device, eps)
@@ -436,11 +473,13 @@ if __name__ == '__main__':
         ann_prime_examples_fgsm.append(ex)
 
     # Calculate adversarial loss
+    ann_losses = []
     ann_adv_losses = []
-    ann_prime_adv_losses = []
+    ann_prime_losses = []
     for i in range(0, len(epsilons)):
-        ann_adv_losses.append(ann_accuracies_fgsm[0] - ann_accuracies_fgsm[i])
-        ann_prime_adv_losses.append(ann_prime_accuracies_fgsm[0] - ann_prime_accuracies_fgsm[i])
+        ann_losses.append(ann_accuracies_fgsm[0] - ann_accuracies_fgsm[i])
+        ann_adv_losses.append(ann_adv_accuracies_fgsm[0] - ann_adv_accuracies_fgsm[i])
+        ann_prime_losses.append(ann_prime_accuracies_fgsm[0] - ann_prime_accuracies_fgsm[i])
 
     f.write('\n\n ' + ann_identifier + ' summary')
     f.write('\n\ttest_loss: {:.4f}, test_acc: {:.4f}, time: {}'.format(
@@ -451,6 +490,17 @@ if __name__ == '__main__':
         )
     f.write('\n\tepsilons: {}'.format(epsilons))
     f.write('\n\tfgsm accuracies: {}'.format(ann_accuracies_fgsm))
+    f.write('\n\tfgsm adv losses: {}'.format(ann_losses))
+
+    f.write('\n\n ' + ann_adv_identifier + ' summary')
+    f.write('\n\ttest_loss: {:.4f}, test_acc: {:.4f}, time: {}'.format(
+            ann_adv_state['test_loss'], 
+            ann_adv_state['test_acc'],
+            ann_adv_state['time']
+            )
+        )
+    f.write('\n\tepsilons: {}'.format(epsilons))
+    f.write('\n\tfgsm accuracies: {}'.format(ann_adv_accuracies_fgsm))
     f.write('\n\tfgsm adv losses: {}'.format(ann_adv_losses))
 
     f.write('\n\n ' + ann_prime_identifier + ' summary')
@@ -462,11 +512,12 @@ if __name__ == '__main__':
         )
     f.write('\n\tepsilons: {}'.format(epsilons))
     f.write('\n\tfgsm accuracies: {}'.format(ann_prime_accuracies_fgsm))
-    f.write('\n\tfgsm adv losses: {}'.format(ann_prime_adv_losses))
+    f.write('\n\tfgsm adv losses: {}'.format(ann_prime_losses))
     
-    plt.figure(figsize=(5,5))
-    plt.plot(epsilons, ann_adv_losses, label='ANN')
-    plt.plot(epsilons, ann_prime_adv_losses, label='ANN\'')
+    plt.figure(figsize=(10,10))
+    plt.plot(epsilons, ann_losses, label='ANN')
+    plt.plot(epsilons, ann_adv_losses, label='ANN_adv')
+    plt.plot(epsilons, ann_prime_losses, label='ANN\'')
     plt.yticks(np.arange(0, 1.1, step=0.1))
     plt.xticks(np.arange(0, .35, step=0.05))
     plt.title("Adv Loss vs Epsilon [{}]".format(log_file[18:-4]))
